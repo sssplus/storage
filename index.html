@@ -1,12 +1,308 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Doc2MD Converter</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF / DOC → Markdown Converter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.10);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 520px;
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #111;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: .85rem;
+      color: #666;
+      margin-bottom: 28px;
+    }
+
+    /* ── Drop zone ── */
+    #drop-zone {
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      color: #555;
+      font-size: .92rem;
+    }
+
+    #drop-zone.over {
+      border-color: #4f46e5;
+      background: #f0effe;
+      color: #4f46e5;
+    }
+
+    #drop-zone svg {
+      display: block;
+      margin: 0 auto 12px;
+      color: #bbb;
+    }
+
+    #drop-zone.over svg { color: #4f46e5; }
+
+    #file-input { display: none; }
+
+    .browse-link {
+      color: #4f46e5;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    /* ── File info ── */
+    #file-info {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      background: #f8f8f8;
+      border-radius: 6px;
+      font-size: .85rem;
+      color: #333;
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #file-info.visible { display: flex; }
+
+    #file-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #clear-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #999;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 2px 4px;
+    }
+    #clear-btn:hover { color: #333; }
+
+    /* ── Convert button ── */
+    #convert-btn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 12px;
+      background: #4f46e5;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, opacity .2s;
+    }
+
+    #convert-btn:hover:not(:disabled) { background: #4338ca; }
+    #convert-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* ── Status / progress ── */
+    #status {
+      margin-top: 16px;
+      font-size: .85rem;
+      text-align: center;
+      min-height: 20px;
+    }
+
+    #status.error { color: #dc2626; }
+    #status.success { color: #16a34a; }
+    #status.working { color: #4f46e5; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #c7d2fe;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Supported formats note ── */
+    .formats {
+      margin-top: 28px;
+      font-size: .78rem;
+      color: #999;
+      text-align: center;
+    }
+    .formats span {
+      display: inline-block;
+      background: #f0f0f0;
+      border-radius: 4px;
+      padding: 2px 7px;
+      margin: 2px 2px;
+      font-weight: 600;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>PDF / DOC → Markdown</h1>
+  <p class="subtitle">Drop a file below — get a clean <code>.md</code> file back instantly.</p>
+
+  <!-- Drop zone -->
+  <div id="drop-zone">
+    <svg width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5"
+         viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round"
+            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021
+               18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+    </svg>
+    Drag &amp; drop your file here, or
+    <label class="browse-link" for="file-input">browse</label>
+    <input type="file" id="file-input" accept=".pdf,.doc,.docx" />
+  </div>
+
+  <!-- Selected file info -->
+  <div id="file-info">
+    <span>📄</span>
+    <span id="file-name"></span>
+    <button id="clear-btn" title="Remove">✕</button>
+  </div>
+
+  <!-- Action -->
+  <button id="convert-btn" disabled>Convert to Markdown</button>
+
+  <!-- Status -->
+  <div id="status"></div>
+
+  <div class="formats">
+    Supported formats:
+    <span>PDF</span><span>DOCX</span><span>DOC</span>
+  </div>
+</div>
+
+<script>
+  const dropZone   = document.getElementById('drop-zone');
+  const fileInput  = document.getElementById('file-input');
+  const fileInfo   = document.getElementById('file-info');
+  const fileName   = document.getElementById('file-name');
+  const clearBtn   = document.getElementById('clear-btn');
+  const convertBtn = document.getElementById('convert-btn');
+  const status     = document.getElementById('status');
+
+  let selectedFile = null;
+
+  // ── File selection helpers ──────────────────────────────────────────────────
+  function setFile(file) {
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileInfo.classList.add('visible');
+    convertBtn.disabled = false;
+    clearStatus();
+  }
+
+  function clearFile() {
+    selectedFile = null;
+    fileInput.value = '';
+    fileInfo.classList.remove('visible');
+    convertBtn.disabled = true;
+    clearStatus();
+  }
+
+  function clearStatus() {
+    status.textContent = '';
+    status.className = '';
+  }
+
+  // ── Drag-and-drop ───────────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('over');
+  });
+
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    const file = e.dataTransfer.files[0];
+    if (file) setFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setFile(fileInput.files[0]);
+  });
+
+  clearBtn.addEventListener('click', clearFile);
+
+  // ── Conversion ──────────────────────────────────────────────────────────────
+  convertBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    convertBtn.disabled = true;
+    status.className = 'working';
+    status.innerHTML = '<span class="spinner"></span>Converting…';
+
+    const form = new FormData();
+    form.append('file', selectedFile);
+
+    try {
+      const res = await fetch('/convert', { method: 'POST', body: form });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Server error.' }));
+        status.className = 'error';
+        status.textContent = '✗ ' + (data.error || 'Conversion failed.');
+        convertBtn.disabled = false;
+        return;
+      }
+
+      // Trigger download
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const stem = selectedFile.name.replace(/\.[^.]+$/, '');
+      a.href     = url;
+      a.download = stem + '.md';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      status.className = 'success';
+      status.textContent = '✓ Download started — ' + stem + '.md';
+
+    } catch (err) {
+      status.className = 'error';
+      status.textContent = '✗ Network error: ' + err.message;
+    } finally {
+      convertBtn.disabled = false;
+    }
+  });
+</script>
+
+</body>
 </html>
